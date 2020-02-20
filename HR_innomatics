@@ -1,0 +1,247 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+import statsmodels.api as sm
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.preprocessing import OneHotEncoder
+import warnings
+from sklearn import metrics
+warnings.filterwarnings('ignore')
+
+
+def VarianceInflationFactor(dataframe_independent):
+            print('Note:* Variance Inflation Factor will computed without null values')
+            df_factor = dataframe_independent.dropna()
+            x = sm.add_constant(df_factor)
+
+            vif_value = []
+            for i in range(len(x.columns)):
+                if i != 0:
+                    vif_value.append(variance_inflation_factor(x.values,i))
+
+            df_vif = pd.DataFrame()
+            df_vif['Features'] = list(x.columns)[1:]
+            df_vif['VIF']=vif_value
+            
+            return df_vif
+        
+        
+def confustionMatrix(y_true,y_pred,labels):
+    cm = metrics.confusion_matrix(y_true,y_pred)
+    cm = pd.DataFrame(cm,index=labels,columns=labels)
+    cm['tot'] = cm.sum(axis=1)
+    cm.loc['tot'] = cm.sum(axis=0)
+    return cm
+
+class eda():
+    def __init__(self,data):
+        print('Exploratory Data Analysis')
+        
+        self.data = data
+        
+    def dimension(self,dependent_series,normalize=True,classification=True):
+        print('Dimension of Dataset',self.data.shape)
+        # missing values (percentage of missing values)
+        missing = self.data.isnull().sum()/len(self.data) * 100
+        print('Total Percentage of missing values = %0.2f '%missing.sum())
+        print('*'*50)
+        print('Individual percentage missing values: \n')
+        print(missing)
+        print('\n\n')
+        print('='*29)
+        print('|    Criterion    |  Remedy  |')
+        print('='*29)
+        print('|   total < 5%    | drop row |')
+        print('-'*29)
+        print('| 5 < total < 30% |  impute  |')
+        print('-'*29)
+        print('|    total > 30%  | drop col |')
+        print('-'*29)
+        
+        
+        if classification:
+            # check of balance data
+            class_count = dependent_series.value_counts(normalize=normalize)
+            print('*'*50)
+            print('Output class count\n')
+            print(class_count)
+            # visualizing data
+            plt.figure(figsize=(10,4))
+            plt.subplot(1,2,1)
+            class_count.plot(kind='bar')
+            plt.subplot(1,2,2)
+            class_count.plot(kind='pie')
+                        
+            
+    def correlation(self,cmap='YlGnBu',mask=True,cbar=True):
+            # multi collinearity
+            corr = self.data.corr()
+            if mask:
+                mask = np.zeros_like(corr)
+                mask[np.triu_indices_from(corr)] = 1
+                plt.figure(figsize=(10,6))
+                sns.heatmap(corr,annot=True,fmt='0.2f',cmap=cmap,mask=mask,cbar=cbar)
+                plt.show()
+            else:
+                plt.figure(figsize=(10,6))
+                sns.heatmap(corr,annot=True,fmt='0.2f',cmap=cmap,cbar=cbar)
+                plt.show()
+
+
+            vif_df = VarianceInflationFactor(self.data)
+            
+            print('\n\nVariance Inflation Factor')
+            print('*'*50)
+            print(vif_df)
+
+
+class MissingValueTreatment():
+    def __init__(self,data):
+        
+        self.data = data
+        print('Missing Value Treatment')
+        print('\n')
+        print('='*29)
+        print('|    Criterion    |  Remedy  |')
+        print('='*29)
+        print('|   total < 5%    | drop row |')
+        print('-'*29)
+        print('| 5 < total < 30% |  impute  |')
+        print('-'*29)
+        print('|    total > 30%  | drop col |')
+        print('-'*29)
+        
+    def imputer(self,label,method="classification"):
+        """
+        Bayesian method = mean, median, mode
+        Intelligent method = regression , classification
+        
+        """
+        
+        __df_dummy = self.data
+        # remove missing values
+        __df_dummy = __df_dummy.dropna()
+        __x_data = __df_dummy.drop(label,axis=1)
+        __y_data = __df_dummy[label]
+        
+        if method=='classification':
+            model_missing = RandomForestClassifier(n_estimators=100)
+            model_missing.fit(__x_data,__y_data)
+            # getting index position of missing values
+            df_missing = self.data.copy()
+            df_missing_null = df_missing[df_missing[label].isnull()]
+            x_mising = df_missing_null.drop(label,axis=1)
+            x_missing_drop = x_mising.dropna()
+            to_replace = pd.Series(model_missing.predict(x_missing_drop),index=x_missing_drop.index)
+            df_missing[label].loc[x_missing_drop.index] = to_replace
+            
+            return df_missing[label]
+        
+        elif method=='regression':
+            model_missing = RandomForestClassifier(n_estimators=100)
+            model_missing.fit(__x_data,__y_data)
+            # getting index position of missing values
+            df_missing = self.data.copy()
+            df_missing_null = df_missing[df_missing[label].isnull()]
+            x_mising = df_missing_null.drop(label,axis=1)
+            x_missing_drop = x_mising.dropna()
+            to_replace = pd.Series(model_missing.predict(x_missing_drop),index=x_missing_drop.index)
+            df_missing[label].loc[x_missing_drop.index] = to_replace
+            
+            return df_missing[label]
+        
+      
+
+    
+class classification_metrics():
+    
+    def __init__(self,model_trained,x_train,x_test,y_train,y_test):
+        self.x_train  = x_train
+        self.x_test = x_test
+        self.y_train = y_train
+        self.y_test = y_test
+        # model predicted
+        self.y_train_pred = model_trained.predict(x_train)
+        self.y_test_pred = model_trained.predict(x_test)
+        # probability
+        self.y_train_prob = model_trained.predict_proba(x_train)
+        self.y_test_prob = model_trained.predict_proba(x_test)
+    
+    def summary(self,labels):
+        # confusion matrix
+        print('Summary Report')
+        print("="*20)
+        print('Confusion Matrix:')
+        print("="*20)
+        print('\nfor train data\n')
+        print(confustionMatrix(self.y_train,self.y_train_pred,labels))
+        print('\nfor test data\n')
+        print(confustionMatrix(self.y_test,self.y_test_pred,labels))
+        
+        # classification report
+        print("="*20)
+        print('Classification Report:')
+        print("="*20)
+        train_cr = metrics.classification_report(self.y_train,self.y_train_pred,target_names=labels)
+        test_cr = metrics.classification_report(self.y_test,self.y_test_pred,target_names=labels)
+        print('\n for train data\n')
+        print(train_cr)
+        print('\n for test data\n')
+        print(test_cr)
+        print("="*20)
+        print('Kappa Score for train data:',metrics.cohen_kappa_score(self.y_train,self.y_train_pred))
+        print('Kappa Score for test data:',metrics.cohen_kappa_score(self.y_test,self.y_test_pred))
+        print("="*20)
+        print('ROC AUC Score for train data:',metrics.roc_auc_score(self.y_train,self.y_train_pred))
+        print('ROC AUC Score for test data:',metrics.roc_auc_score(self.y_test,self.y_test_pred))
+        print("="*20)
+
+    def plot_roc_curve(self,labels,mutiplier=1,kind=None):
+        """
+        kind= train, test
+        """
+        try:
+                
+            if kind=='train':
+                ohe = OneHotEncoder()
+                y_ohe = ohe.fit_transform(self.y_train.reshape(-1,1)).toarray()
+                y_prob = self.y_train_prob
+            else:
+                ohe = OneHotEncoder()
+                y_ohe = ohe.fit_transform(self.y_test.reshape(-1,1)).toarray()
+                y_prob = self.y_test_prob
+
+        except:
+
+            if kind=='train':
+                ohe = OneHotEncoder()
+                y_ohe = ohe.fit_transform(self.y_train.values.reshape(-1,1)).toarray()
+                y_prob = self.y_train_prob
+            else:
+                ohe = OneHotEncoder()
+                y_ohe = ohe.fit_transform(self.y_test.values.reshape(-1,1)).toarray()
+                y_prob = self.y_test_prob
+
+
+        n_classes = y_ohe.shape[1]
+
+        # roc for 0
+        for i in range(0,n_classes):
+            plt.figure(figsize=(10,5))
+            fpr,tpr,probability = metrics.roc_curve(y_ohe[:,i],y_prob[:,i])
+            plt.plot(fpr,tpr)
+            area = metrics.auc(fpr,tpr)
+            plt.legend(['AUC = %0.4f'%area])
+            plt.title('ROC curve for class {}'.format(labels[i]))
+            for i in range(0,len(fpr),mutiplier):
+                if i % mutiplier == 1:
+                    plt.text(fpr[i],tpr[i],'%0.2f'%probability[i])
+                    #pass  
+            plt.plot([0,1],[0,1],'b--')
+            plt.show()
+    
+
+
+
